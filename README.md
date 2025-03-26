@@ -66,15 +66,15 @@ Asegúrate de tener los siguientes requisitos instalados:
     Ejecuta las migraciones de la base de datos:
 
     ```bash
-    php artisan migrate
+    php artisan migrate:fresh --seed
     ```
 
 7.  **Crear un Usuario de Filament:**
 
-    Crea un usuario administrador para acceder al panel de Filament:
+    Crea un usuario super_admin para acceder al panel de Filament y crear otros usuarios desde el panel de Filament:
 
     ```bash
-    php artisan make:filament-user
+    php artisan filament:user-create "Super Admin" "superadmin@gmail.com" "pass1234" --super_admin
     ```
 
 8.  **Genera la llave del servidor:**
