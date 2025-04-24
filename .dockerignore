@@ -1,0 +1,13 @@
+.git
+.gitignore
+.env # ¡NUNCA copies tu .env a la imagen!
+/node_modules # No necesitas las dependencias de npm en la imagen de producción si compilas assets antes
+/vendor # Composer install ya las crea
+/tests
+composer.lock # Composer install ya la usa
+package.json
+package-lock.json
+npm-debug.log
+docker-compose.yml # Y otros archivos docker de desarrollo
+Dockerfile # El Dockerfile de desarrollo
+Dockerfile.prod # Este mismo archivo, si lo renombras

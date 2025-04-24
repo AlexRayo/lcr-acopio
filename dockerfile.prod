@@ -1,0 +1,104 @@
+# ---- Base Image ----
+# Usamos una imagen oficial de PHP FPM basada en Alpine. Alpine es muy ligera.
+# Elegimos la versión FPM porque el servidor web (Nginx/Apache) correrá en otro contenedor y se comunicará con PHP-FPM.
+FROM php:8.3-fpm-alpine
+
+# ---- Install System Dependencies ----
+# Instalamos paquetes del sistema operativo necesarios para las extensiones de PHP o la aplicación.
+# --no-cache reduce el tamaño final de la imagen.
+# Ajusta esta lista según las necesidades REALES de tu proyecto (por ejemplo, si usas PostgreSQL, instala postgresql-dev y pdo_pgsql; si usas GD, instala libpng, libjpeg, etc.)
+RUN apk add --no-cache \
+    git \
+    unzip \
+    libpng libjpeg libwebp libxpm gd \
+    libpq \
+    freetype \
+    libzip-dev \
+    postgresql-dev \
+    mysql-client \
+    mariadb-client \
+    oniguruma-dev \
+    autoconf \
+    g++
+
+# ---- Install PHP Extensions ----
+# Instalamos las extensiones de PHP necesarias usando las herramientas oficiales de la imagen.
+# -j$(nproc) acelera la instalación usando múltiples núcleos.
+# AJUSTA esta lista según las extensiones que tu proyecto REQUIERA estrictamente.
+RUN docker-php-ext-install -j$(nproc) \
+    pdo_mysql \
+    pdo_pgsql \
+    zip \
+    bcmath \
+    exif \
+    pcntl \
+    opcache # Opcache es CRUCIAL para el rendimiento en producción
+
+# Configurar e instalar GD con soporte para formatos comunes
+RUN docker-php-ext-configure gd --with-freetype --with-jpeg --with-webp
+RUN docker-php-ext-install -j$(nproc) gd
+
+# Instalar extensión de Redis (si tu proyecto usa Redis)
+# Pecl es el instalador de extensiones PECL.
+RUN pecl install -o -f redis \
+    && rm -rf /tmp/pear \
+    && docker-php-ext-enable redis # Habilitar la extensión
+
+# ---- Set Working Directory ----
+# Definimos el directorio donde estará el código de nuestra aplicación dentro del contenedor.
+WORKDIR /var/www/html
+
+# ---- Copy Application Code ----
+# Copiamos el código de la aplicación al directorio de trabajo.
+# NOTA: Usaremos un archivo .dockerignore para excluir archivos de desarrollo y directorios innecesarios.
+COPY . /var/www/html
+
+# ---- Install PHP Dependencies (Composer) ----
+# Copiamos los archivos de composer y luego instalamos las dependencias.
+# Esto se hace DESPUÉS de copiar el código, pero antes de configurar permisos.
+# --no-dev: Omite las dependencias de desarrollo (¡importante para producción!).
+# --optimize-autoloader: Optimiza el autoloader de Composer para un inicio más rápido.
+# No usamos una etapa builder aquí por simplicidad, pero es una optimización común.
+COPY composer.json composer.lock ./
+RUN composer install --no-dev --optimize-autoloader
+
+# ---- Copy Compiled Frontend Assets ----
+# En producción, NO usas `npm run dev`. Debes compilar tus assets (JS/CSS)
+# EN TU MÁQUINA LOCAL o en un paso de tu pipeline de CI/CD ANTES de construir esta imagen de producción.
+# Luego, copias los archivos ya compilados a la imagen.
+# DEBES EJECUTAR `npm run build` LOCALMENTE (o en CI) ANTES de construir este Dockerfile.
+# DESCOMENTA Y AJUSTA la siguiente línea si tienes assets compilados (ej: con Vite, webpack).
+# COPY public/build /var/www/html/public/build
+
+# ---- Permissions ----
+# Creamos un usuario y grupo dentro del contenedor y configuramos los permisos.
+# www-data es un usuario/grupo común para servidores web/PHP.
+# $UID y $GID no funcionan aquí; usamos un ID fijo o creamos un usuario nuevo.
+RUN groupadd -g 1000 www-data || true
+RUN useradd -u 1000 -G www-data -ms /bin/bash www-data || true # Usa || true para evitar error si ya existen (ej: en imagen base)
+
+# Aseguramos que los directorios de storage, cache y public (si copias assets) tengan permisos correctos para que el usuario www-data pueda escribir en ellos.
+RUN chown -R www-data:www-data \
+    /var/www/html/storage \
+    /var/www/html/bootstrap/cache
+# /var/www/html/public/build # Descomentar si copiaste assets
+
+RUN chmod -R 775 \
+    /var/www/html/storage \
+    /var/www/html/bootstrap/cache
+# /var/www/html/public/build # Descomentar si copiaste assets
+
+# Establecer permisos de lectura para el resto del código
+RUN chmod -R 755 /var/www/html
+
+# Cambiamos al usuario www-data para que el proceso PHP-FPM no corra como root.
+USER www-data
+
+# ---- Exposed Port ----
+# El puerto que PHP-FPM escuchará para recibir conexiones del servidor web.
+EXPOSE 9000
+
+# ---- Command to Run ----
+# El comando que se ejecuta cuando se inicia un contenedor a partir de esta imagen.
+# Simplemente iniciamos el proceso PHP-FPM.
+CMD ["php-fpm"]
